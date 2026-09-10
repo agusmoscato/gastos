@@ -1,0 +1,5 @@
+# Nunca subir el .env real (tiene la contraseña de la base de datos).
+# El .env real ni siquiera debería estar dentro de esta carpeta —
+# ver README, sección "Completar la conexión a la base" — pero por las
+# dudas queda ignorado acá también.
+.env

@@ -1,0 +1,18 @@
+<?php
+require_once __DIR__ . '/../includes/functions.php';
+$uid = require_login_api();
+$data = require_csrf_api();
+
+$id = (int) ($data['id'] ?? 0);
+$active = !empty($data['active']);
+if ($id <= 0) json_response(['error' => 'Falta el id'], 422);
+
+$pdo = get_pdo();
+$check = $pdo->prepare('SELECT id FROM due_dates WHERE id = ? AND user_id = ?');
+$check->execute([$id, $uid]);
+if (!$check->fetch()) json_response(['error' => 'No encontrado'], 404);
+
+$pdo->prepare('UPDATE due_dates SET active = ? WHERE id = ? AND user_id = ?')
+    ->execute([$active ? 1 : 0, $id, $uid]);
+
+json_response(['ok' => true]);

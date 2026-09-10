@@ -1,0 +1,16 @@
+{
+  "name": "mi libreta — gastos",
+  "short_name": "mi libreta",
+  "description": "Anotá tus gastos y mirá en qué se te va la plata cada mes.",
+  "start_url": "/index.php",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#26362B",
+  "theme_color": "#26362B",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
