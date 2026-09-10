@@ -5,7 +5,7 @@ require_once __DIR__ . '/auth.php';
 // o assets/style.css. Al cambiar, la URL de esos archivos cambia (?v=N) y
 // el navegador (y cualquier service worker viejo que haya quedado activo)
 // los va a pedir de nuevo sí o sí, en vez de servir una versión vieja cacheada.
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 
 function json_response($data, int $code = 200): void {
     http_response_code($code);

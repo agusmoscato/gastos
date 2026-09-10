@@ -905,6 +905,41 @@
   function openIncomeListModal() {
     const entries = monthData.incomeEntries || [];
     const total = entries.reduce((s, e) => s + e.amount, 0);
+
+    // Resumen "por categoría": junta todo lo que entró este mes agrupado por
+    // categoría (los sin categoría van juntos al final).
+    const byCat = new Map();
+    entries.forEach((e) => {
+      const key = e.categoryId ?? 0;
+      const cur = byCat.get(key) || {
+        name: e.categoryName || "Sin categoría",
+        color: e.categoryColor || "#8B7355",
+        amount: 0,
+        count: 0,
+      };
+      cur.amount += e.amount;
+      cur.count += 1;
+      byCat.set(key, cur);
+    });
+    const catGroups = [...byCat.entries()]
+      .sort((a, b) => {
+        if (a[0] === 0) return 1;
+        if (b[0] === 0) return -1;
+        return b[1].amount - a[1].amount;
+      })
+      .map(([, v]) => v);
+    const byCatHTML = catGroups.length > 1
+      ? `<div class="card-title" style="margin-bottom:4px">Por categoría</div>
+         <div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px dashed var(--border)">
+           ${catGroups.map((c) => `
+             <div class="legend-row">
+               <span class="dot" style="background:${c.color}"></span>
+               <span class="legend-name">${esc(c.name)}</span>
+               <span class="legend-val">${fmtMoney(c.amount)} · ${total ? Math.round((c.amount / total) * 100) : 0}%</span>
+             </div>`).join("")}
+         </div>`
+      : "";
+
     const rowsHTML = entries.length
       ? entries.map((e) => `
           <div class="expense-row" data-income-row="${e.id}" style="cursor:pointer">
@@ -923,6 +958,7 @@
         <span class="ticket-label" style="font-weight:700">Total del mes</span>
         <span class="ticket-big" style="font-size:22px;color:var(--green)">${fmtMoney(total)}</span>
       </div>
+      ${byCatHTML}
       <div id="income-list-rows">${rowsHTML}</div>
       <button type="button" class="primary-btn" id="income-add-btn" style="margin-top:14px">+ agregar ingreso</button>
     `;
