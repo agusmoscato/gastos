@@ -4,7 +4,7 @@ App de **gastos personales** con login real, pensada para subir tal cual a un
 hosting compartido tipo **Hostinger**. Sin build, sin dependencias de servidor:
 se sube por FTP/administrador de archivos y funciona.
 
-Versión actual: **v12** (ver `APP_VERSION` en `includes/functions.php`).
+Versión actual: **v13** (ver `APP_VERSION` en `includes/functions.php`).
 
 ---
 
@@ -151,7 +151,7 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 - **Compras en cuotas**: se cargan una vez y generan el gasto de cada mes con etiqueta "cuota 3/12". "Cancelar restantes" borra solo las futuras sin perder el historial; borrar la compra borra todo.
 - **Gastos fijos recurrentes**: se cargan una vez y se generan solos cada mes hasta pausarlos o borrarlos.
 - **Vencimientos** con color según urgencia (vencido / vence pronto / falta) y botón "marcar pagado" que puede crear y vincular el gasto.
-- **Ingresos múltiples por mes** (sueldo, freelance, ventas...), cada uno editable/borrable, **con categoría opcional** (mismo sistema de categorías y colores que los gastos). El total del mes es la suma.
+- **Ingresos múltiples por mes** (sueldo, freelance, ventas...), cada uno editable/borrable, **con categoría opcional** (mismo sistema de categorías y colores que los gastos). El total del mes es la suma. El modal de ingresos (se abre desde "Ingreso" en el ticket) muestra arriba un desglose **"Por categoría"** — monto y % de cada categoría del mes, "Sin categoría" al final — que aparece cuando hay más de una categoría en juego.
 - **Importar / exportar CSV** de movimientos. **Backup completo en JSON**.
 - **Resumen anual**: ingreso / gasto / balance del año, gráfico mes a mes, total por categoría.
 - **Panel de configuración** (ícono de tuerca): import/export, backup, y elegir qué tarjetas mostrar (paneles ocultables, se guarda en `user_settings`).
@@ -170,9 +170,9 @@ mismas URLs versionadas.
 **Cada vez que se toca `assets/app.js` o `assets/style.css` hay que subir ese
 número en los TRES lugares:**
 
-1. `APP_VERSION` en `includes/functions.php` (ej. `'v12'` → `'v13'`).
-2. `CACHE_NAME` en `service-worker.js` (`"mi-libreta-v12"` → `"mi-libreta-v13"`).
-3. Los `?v=v12` dentro de `PRECACHE` en `service-worker.js`.
+1. `APP_VERSION` en `includes/functions.php` (ej. `'v13'` → `'v14'`).
+2. `CACHE_NAME` en `service-worker.js` (`"mi-libreta-v13"` → `"mi-libreta-v14"`).
+3. Los `?v=v13` dentro de `PRECACHE` en `service-worker.js`.
 
 Si no se sube, **el service worker sigue sirviendo la versión vieja cacheada**
 a los usuarios que ya abrieron la app. Esto ya pasó (fue el bug de las cuotas)
