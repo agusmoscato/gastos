@@ -3,6 +3,11 @@ require_once __DIR__ . '/../includes/functions.php';
 $uid = require_login_api();
 $data = require_csrf_api();
 
+// type=expense (por defecto) o type=income: el CSV es el mismo
+// (Fecha;Categoría;Descripción;Monto), solo cambia dónde se guarda.
+$type = ($data['type'] ?? 'expense') === 'income' ? 'income' : 'expense';
+$isIncome = $type === 'income';
+
 $rows = $data['rows'] ?? [];
 if (!is_array($rows) || count($rows) === 0) {
     json_response(['error' => 'No hay filas para importar'], 422);
@@ -26,8 +31,10 @@ foreach ($catStmt->fetchAll() as $c) {
 }
 
 $insertCategory = $pdo->prepare('INSERT INTO categories (user_id, name, color) VALUES (?, ?, ?)');
-$insertExpense = $pdo->prepare(
-    'INSERT INTO expenses (user_id, category_id, amount, description, expense_date, month) VALUES (?, ?, ?, ?, ?, ?)'
+$insertRow = $pdo->prepare(
+    $isIncome
+        ? 'INSERT INTO incomes (user_id, category_id, amount, description, income_date, month) VALUES (?, ?, ?, ?, ?, ?)'
+        : 'INSERT INTO expenses (user_id, category_id, amount, description, expense_date, month) VALUES (?, ?, ?, ?, ?, ?)'
 );
 
 $imported = 0;
@@ -64,7 +71,7 @@ try {
         }
 
         $month = substr($dateStr, 0, 7);
-        $insertExpense->execute([$uid, $categoryId, $amount, $desc, $dateStr, $month]);
+        $insertRow->execute([$uid, $categoryId, $amount, $desc, $dateStr, $month]);
         $imported++;
     }
     $pdo->commit();

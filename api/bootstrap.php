@@ -9,6 +9,19 @@ $cats->execute([$uid]);
 $tpls = $pdo->prepare('SELECT id, name, amount, category_id FROM templates WHERE user_id = ? ORDER BY id ASC');
 $tpls->execute([$uid]);
 
+// income_templates es una tabla nueva (v9): si todavía no se corrió esa
+// migración, la app arranca igual y simplemente no hay ingresos frecuentes.
+// Ojo: con PDO sin emular prepares, el "table doesn't exist" salta en el
+// prepare(), así que el try tiene que envolverlo también.
+$incomeTemplates = [];
+try {
+    $incomeTpls = $pdo->prepare('SELECT id, name, amount, category_id FROM income_templates WHERE user_id = ? ORDER BY id ASC');
+    $incomeTpls->execute([$uid]);
+    $incomeTemplates = $incomeTpls->fetchAll();
+} catch (Throwable $e) {
+    // sin migración todavía: la tarjeta de ingresos frecuentes queda vacía
+}
+
 // Settings es una tabla nueva (v5): si todavía no se corrió esa migración,
 // que la app arranque igual con las preferencias por defecto en vez de romper.
 $hiddenSections = [];
@@ -29,6 +42,7 @@ try {
 json_response([
     'categories' => $cats->fetchAll(),
     'templates' => $tpls->fetchAll(),
+    'incomeTemplates' => $incomeTemplates,
     'csrf' => csrf_token(),
     'settings' => [
         'hiddenSections' => $hiddenSections,

@@ -24,6 +24,8 @@ $backup = [
     'templates' => fetch_all_safe($pdo, 'SELECT id, name, amount, category_id FROM templates WHERE user_id = ?', [$uid]),
     'installmentPurchases' => fetch_all_safe($pdo, 'SELECT id, category_id, description, total_amount, num_installments, first_month FROM installment_purchases WHERE user_id = ?', [$uid]),
     'recurringExpenses' => fetch_all_safe($pdo, 'SELECT id, category_id, name, amount, start_month, day_of_month, active FROM recurring_expenses WHERE user_id = ?', [$uid]),
+    'incomeTemplates' => fetch_all_safe($pdo, 'SELECT id, name, amount, category_id FROM income_templates WHERE user_id = ?', [$uid]),
+    'recurringIncomes' => fetch_all_safe($pdo, 'SELECT id, category_id, name, amount, start_month, day_of_month, active FROM recurring_incomes WHERE user_id = ?', [$uid]),
 ];
 
 $filename = 'mi-libreta-backup-' . date('Y-m-d') . '.json';

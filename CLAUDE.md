@@ -4,7 +4,7 @@ App de **gastos personales** con login real, pensada para subir tal cual a un
 hosting compartido tipo **Hostinger**. Sin build, sin dependencias de servidor:
 se sube por FTP/administrador de archivos y funciona.
 
-Versión actual: **v13** (ver `APP_VERSION` en `includes/functions.php`).
+Versión actual: **v14** (ver `APP_VERSION` en `includes/functions.php`).
 
 ---
 
@@ -44,7 +44,7 @@ Versión actual: **v13** (ver `APP_VERSION` en `includes/functions.php`).
 | `db.php` | `get_pdo()` — singleton PDO. |
 | `auth.php` | sesión, `require_login()` / `require_login_api()`, `csrf_token()` / `csrf_valid()`. |
 | `remember.php` | tokens de sesión persistente (selector + validator hasheado en `auth_tokens`). |
-| `functions.php` | `APP_VERSION`, helpers de JSON/CSRF, helpers de meses, categorías por defecto, `PALETTE`, rate limiting de login, reCAPTCHA, `materialize_recurring_expenses()`. |
+| `functions.php` | `APP_VERSION`, helpers de JSON/CSRF, helpers de meses, categorías por defecto, `PALETTE`, rate limiting de login, reCAPTCHA, `materialize_recurring_expenses()` y `materialize_recurring_incomes()`. |
 | `mailer.php` | envío del mail de recuperación. |
 
 ---
@@ -62,11 +62,13 @@ tiene además su `sql/upgrade_vN.sql` (ver §5).
 | **budgets** | Presupuesto por `(user_id, category_id, month)`. PK compuesta. `amount`. |
 | **month_settings** | **Legacy**: el ingreso único por mes de antes de la tabla `incomes`. Se sigue leyendo como fallback si falta `upgrade_v7`. `income_set.php` todavía escribe acá. |
 | **templates** | "Gastos frecuentes": `name`, `amount`, `category_id` opcional. Cargás un gasto de un toque. |
+| **income_templates** | "Ingresos frecuentes": mismas columnas que `templates`, pero para ingresos. Viven en el modal de ingresos (`upgrade_v9`). |
+| **recurring_incomes** | Ingresos fijos mensuales (sueldo, alquiler que cobrás...): mismas columnas que `recurring_expenses` (`name`, `amount`, `start_month`, `day_of_month`, `active`, `category_id`). (`upgrade_v9`) |
 | **installment_purchases** | Compras en cuotas: `description`, `total_amount`, `num_installments`, `first_month`, `category_id`. Cada una genera un `expenses` por mes. |
 | **recurring_expenses** | Gastos fijos mensuales (Netflix, alquiler...): `name`, `amount`, `start_month`, `day_of_month`, `active`, `category_id`. Sin fecha de fin. |
 | **due_dates** | Vencimientos (tarjeta, servicios, seguro): `name`, `amount` (nullable si varía), `due_day`, `recurring` (mensual) o `one_time_month`, `active`, `category_id`. |
 | **due_date_payments** | Marca de "pagado" de un vencimiento en un mes. `UNIQUE (due_date_id, month)`. `expense_id` opcional (el gasto que se creó al marcar pagado). |
-| **incomes** | Ingresos, varios por mes: `amount`, `description`, `income_date`, `month`, **`category_id`** (FK SET NULL, agregado en `upgrade_v8`). Índice `(user_id, month)`. |
+| **incomes** | Ingresos, varios por mes: `amount`, `description`, `income_date`, `month`, **`category_id`** (FK SET NULL, agregado en `upgrade_v8`), **`recurring_income_id`** (FK SET NULL a `recurring_incomes`, agregado en `upgrade_v9`: marca el ingreso generado por un ingreso fijo, para no duplicarlo). Índice `(user_id, month)`. |
 | **auth_tokens** | "Mantener la sesión iniciada". `selector` (único), `validator_hash`, `expires_at`. Dura 30 días, se renueva sola. |
 | **user_settings** | Preferencias: `hidden_sections` (JSON con las tarjetas ocultas), `notifications_enabled`. PK = `user_id`. |
 | **login_attempts** | Intentos de login para el rate limiting. `email`, `ip`, `attempted_at`. Índices por email y por IP. |
@@ -84,8 +86,8 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 `X-CSRF-Token`). Responden JSON.
 
 ### Arranque y datos del mes
-- **`bootstrap.php`** — carga inicial: categorías + plantillas + `settings` (paneles ocultos, notificaciones) + token CSRF + site key de reCAPTCHA. Degrada con gracia si falta `user_settings`.
-- **`month.php`** (`GET ?month=YYYY-MM&q=&category_id=`) — todo lo del mes: `income` (total), `incomeEntries[]` (cada ingreso con `categoryId`/`categoryName`/`categoryColor`), `budgets{}`, `expenses[]` (con datos de cuota y de gasto fijo). **Endpoint crítico**: nunca debe romper; tiene fallbacks anidados si faltan `upgrade_v5/v7/v8`.
+- **`bootstrap.php`** — carga inicial: categorías + plantillas + **plantillas de ingreso** (`incomeTemplates`) + `settings` (paneles ocultos, notificaciones) + token CSRF + site key de reCAPTCHA. Degrada con gracia si faltan `user_settings` o `income_templates`.
+- **`month.php`** (`GET ?month=YYYY-MM&q=&category_id=&income_q=&income_category_id=`) — todo lo del mes: `income` (total **sin filtrar**), `incomeEntries[]` (cada ingreso con `categoryId`/`categoryName`/`categoryColor`, ya filtrado por `income_q`/`income_category_id`), `budgets{}`, `expenses[]` (con datos de cuota y de gasto fijo). `q`/`category_id` filtran movimientos; `income_q`/`income_category_id` filtran la lista de ingresos (se aplican en PHP, después de sumar el total del mes, así el ticket sigue mostrando el ingreso real). Materializa gastos fijos **e ingresos fijos**. **Endpoint crítico**: nunca debe romper; tiene fallbacks anidados si faltan `upgrade_v5/v7/v8/v9`.
 
 ### Gastos
 - **`expense_add.php`** — alta. Valida `categoryId` contra las del usuario.
@@ -107,6 +109,16 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 
 ### Plantillas / gastos frecuentes
 - **`template_add.php`**, **`template_delete.php`**.
+
+### Plantillas / ingresos frecuentes
+- **`income_template_add.php`**, **`income_template_delete.php`** — mismo patrón que los de gastos, sobre `income_templates`. El alta avisa claro si falta `upgrade_v9`.
+
+### Ingresos fijos recurrentes
+- **`recurring_income_add.php`** — alta.
+- **`recurring_income_list.php`** — lista (con datos de categoría), devuelve `recurringIncomes[]`. Error claro si falta `upgrade_v9`.
+- **`recurring_income_toggle.php`** — pausar / reactivar (`active`).
+- **`recurring_income_delete.php`** — baja; el historial generado queda (FK SET NULL).
+- La materialización del ingreso de cada mes la hace `materialize_recurring_incomes()` (en `functions.php`) cuando se pide ese mes en `month.php`.
 
 ### Compras en cuotas
 - **`installment_add.php`** — alta; genera un `expenses` por cada mes de la cuota.
@@ -133,9 +145,9 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 - **`year_summary.php`** (`?year=`) — ingreso / gasto / balance del año, mes a mes y total por categoría.
 
 ### Import / export / backup
-- **`export.php`** (`GET ?month=YYYY-MM` o `?month=all`) — descarga CSV de movimientos.
-- **`import_bulk.php`** — importa filas de CSV (`rows[]`, máx 3000). Crea categorías que no existan.
-- **`backup_export.php`** — descarga un JSON con **todo** (categorías, gastos, presupuestos, month_settings, ingresos con `category_id`, plantillas, cuotas, gastos fijos). Cada bloque usa `fetch_all_safe()`: si una tabla no está migrada, ese bloque sale vacío en vez de romper el backup.
+- **`export.php`** (`GET ?month=YYYY-MM` o `?month=all`, más **`&type=income`**) — descarga CSV. Con `type=expense` (por defecto) saca de `expenses`, con `type=income` de `incomes`; mismo formato `Fecha;Categoría;Descripción;Monto` y mismo BOM, solo cambia la tabla y el nombre del archivo.
+- **`import_bulk.php`** — importa filas de CSV (`rows[]`, máx 3000). Crea categorías que no existan. Acepta **`type`** (`expense` por defecto, o `income`): el parseo y la creación de categorías son los mismos, solo cambia el `INSERT` de destino.
+- **`backup_export.php`** — descarga un JSON con **todo** (categorías, gastos, presupuestos, month_settings, ingresos con `category_id`, plantillas, cuotas, gastos fijos, **plantillas de ingreso e ingresos fijos**). Cada bloque usa `fetch_all_safe()`: si una tabla no está migrada, ese bloque sale vacío en vez de romper el backup.
 
 ### Settings
 - **`settings_set.php`** — guarda `hiddenSections` (tarjetas ocultas) y `notificationsEnabled`.
@@ -152,7 +164,8 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 - **Gastos fijos recurrentes**: se cargan una vez y se generan solos cada mes hasta pausarlos o borrarlos.
 - **Vencimientos** con color según urgencia (vencido / vence pronto / falta) y botón "marcar pagado" que puede crear y vincular el gasto.
 - **Ingresos múltiples por mes** (sueldo, freelance, ventas...), cada uno editable/borrable, **con categoría opcional** (mismo sistema de categorías y colores que los gastos). El total del mes es la suma. El modal de ingresos (se abre desde "Ingreso" en el ticket) muestra arriba un desglose **"Por categoría"** — monto y % de cada categoría del mes, "Sin categoría" al final — que aparece cuando hay más de una categoría en juego.
-- **Importar / exportar CSV** de movimientos. **Backup completo en JSON**.
+- **Ingresos a la par de los gastos** (v14): el modal de ingresos tiene **buscador + filtro por categoría** propios (el "Total del mes" sigue siendo el real, sin filtrar, y aparece una línea "Filtrando: N ingresos · $X" cuando hay filtro puesto) y una fila de **"Frecuentes"** (chips de `income_templates`, con el mismo diálogo "¿Querés agregar un ingreso de X por $Y?"). Además hay una tarjeta **"Ingresos fijos"** en el dashboard (ocultable desde Configuración), que se generan solos cada mes igual que los gastos fijos.
+- **Importar / exportar CSV** de movimientos **y de ingresos** (mismo formato y mismo flujo, elegido desde Configuración). **Backup completo en JSON**.
 - **Resumen anual**: ingreso / gasto / balance del año, gráfico mes a mes, total por categoría.
 - **Panel de configuración** (ícono de tuerca): import/export, backup, y elegir qué tarjetas mostrar (paneles ocultables, se guarda en `user_settings`).
 - **Secciones plegables** en el dashboard: tocar el título de una tarjeta la colapsa; se recuerda el estado.
@@ -192,13 +205,17 @@ estáticos justamente para mitigarlo, pero **igual hay que subir la versión**.
   - Foreign keys: chequear `information_schema.TABLE_CONSTRAINTS` y agregarla con `PREPARE`/`EXECUTE` solo si no existe (así no tira "duplicate" al re-correr). Ver `upgrade_v8.sql` como referencia.
 - **Los endpoints críticos para que la app cargue degradan con gracia** si falta
   una migración: **nunca deben romper toda la app**, como mucho esa tarjeta o esa
-  función puntual. Endpoints con fallback: `bootstrap.php` (`user_settings`),
-  `month.php` (`recurring`, `incomes`, `incomes.category_id`),
+  función puntual. **Ojo**: con PDO y `ATTR_EMULATE_PREPARES=false`, el error de
+  "tabla no existe" salta en el `prepare()`, no en el `execute()` — el `try/catch`
+  tiene que envolver el `prepare()` también. Endpoints con fallback:
+  `bootstrap.php` (`user_settings`, `income_templates`),
+  `month.php` (`recurring`, `recurring_incomes`, `incomes`, `incomes.category_id`),
   `months_summary.php` / `year_summary.php` (`incomes` → `month_settings`),
   `backup_export.php` (cada bloque por separado), `income_add.php` /
   `income_update.php` (`incomes.category_id`). Endpoints de tarjetas secundarias
-  (`recurring_list`, `duedates_list`, `installments_list`) sí devuelven un error
-  claro "corré `sql/upgrade_vN.sql`" en vez de fallback.
+  (`recurring_list`, `duedates_list`, `installments_list`,
+  `recurring_income_list`, `income_template_add`, `recurring_income_add`) sí
+  devuelven un error claro "corré `sql/upgrade_vN.sql`" en vez de fallback.
 
 ### Historial de upgrades
 
@@ -211,6 +228,7 @@ estáticos justamente para mitigarlo, pero **igual hay que subir la versión**.
 | `upgrade_v6.sql` | `due_dates` + `due_date_payments` |
 | `upgrade_v7.sql` | tabla `incomes` + migra el ingreso único de `month_settings` a una entrada "Ingreso del mes" |
 | `upgrade_v8.sql` | **`incomes.category_id`** (FK `categories` `ON DELETE SET NULL`) — ingresos por categoría |
+| `upgrade_v9.sql` | **`income_templates`** + **`recurring_incomes`** + **`incomes.recurring_income_id`** (FK `recurring_incomes` `ON DELETE SET NULL`) — ingresos frecuentes e ingresos fijos |
 
 ---
 

@@ -153,6 +153,32 @@ CREATE TABLE IF NOT EXISTS due_date_payments (
   CONSTRAINT fk_duepay_expense FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Ingresos frecuentes (cargar un ingreso de un toque), equivalente a templates
+CREATE TABLE IF NOT EXISTS income_templates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  category_id INT UNSIGNED NULL,
+  name VARCHAR(80) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  CONSTRAINT fk_income_templates_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_income_templates_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Ingresos fijos mensuales (sueldo, alquiler que cobrás...), equivalente a recurring_expenses
+CREATE TABLE IF NOT EXISTS recurring_incomes (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  category_id INT UNSIGNED NULL,
+  name VARCHAR(120) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  start_month CHAR(7) NOT NULL,
+  day_of_month TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_recurring_incomes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_recurring_incomes_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Ingresos (varios por mes, en vez de un solo numero fijo)
 CREATE TABLE IF NOT EXISTS incomes (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -162,8 +188,10 @@ CREATE TABLE IF NOT EXISTS incomes (
   description VARCHAR(255) DEFAULT '',
   income_date DATE NOT NULL,
   month CHAR(7) NOT NULL,
+  recurring_income_id INT UNSIGNED NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_incomes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_incomes_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+  CONSTRAINT fk_incomes_recurring_income FOREIGN KEY (recurring_income_id) REFERENCES recurring_incomes(id) ON DELETE SET NULL,
   INDEX idx_user_month (user_id, month)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

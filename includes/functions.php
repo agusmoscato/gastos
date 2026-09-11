@@ -5,7 +5,7 @@ require_once __DIR__ . '/auth.php';
 // o assets/style.css. Al cambiar, la URL de esos archivos cambia (?v=N) y
 // el navegador (y cualquier service worker viejo que haya quedado activo)
 // los va a pedir de nuevo sí o sí, en vez de servir una versión vieja cacheada.
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 
 function json_response($data, int $code = 200): void {
     http_response_code($code);
@@ -161,6 +161,40 @@ function materialize_recurring_expenses(PDO $pdo, int $uid, string $month): void
         $day = min((int) $r['day_of_month'], $lastDay);
         $expenseDate = sprintf('%s-%02d', $month, $day);
         $insertStmt->execute([$uid, $r['category_id'], $r['amount'], $r['name'], $expenseDate, $month, $r['id']]);
+    }
+}
+
+// ---------------------------------------------------------------------
+// Ingresos fijos mensuales: mismo criterio que los gastos fijos, pero
+// sobre la tabla incomes. Al pedir un mes generamos el ingreso de ese mes
+// para cada ingreso fijo activo que ya debería existir, si todavía no
+// fue generado (el SELECT previo evita duplicados).
+// ---------------------------------------------------------------------
+function materialize_recurring_incomes(PDO $pdo, int $uid, string $month): void {
+    $stmt = $pdo->prepare(
+        'SELECT id, category_id, name, amount, day_of_month FROM recurring_incomes
+         WHERE user_id = ? AND active = 1 AND start_month <= ?'
+    );
+    $stmt->execute([$uid, $month]);
+    $recurring = $stmt->fetchAll();
+    if (!$recurring) return;
+
+    $checkStmt = $pdo->prepare('SELECT id FROM incomes WHERE recurring_income_id = ? AND month = ?');
+    $insertStmt = $pdo->prepare(
+        'INSERT INTO incomes (user_id, category_id, amount, description, income_date, month, recurring_income_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+
+    [$y, $m] = array_map('intval', explode('-', $month));
+    $lastDay = (int) date('t', strtotime(sprintf('%04d-%02d-01', $y, $m)));
+
+    foreach ($recurring as $r) {
+        $checkStmt->execute([$r['id'], $month]);
+        if ($checkStmt->fetch()) continue; // ya generado, no duplicar
+
+        $day = min((int) $r['day_of_month'], $lastDay);
+        $incomeDate = sprintf('%s-%02d', $month, $day);
+        $insertStmt->execute([$uid, $r['category_id'], $r['amount'], $r['name'], $incomeDate, $month, $r['id']]);
     }
 }
 

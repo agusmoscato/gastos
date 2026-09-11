@@ -149,6 +149,19 @@ $userEmail = current_user_email();
       </div>
     </div>
 
+    <div class="card" data-section="recurring-incomes">
+      <div class="card-header" data-toggle tabindex="0" role="button">
+        <span class="card-title" style="margin-bottom:0">Ingresos fijos</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button type="button" class="small-link" id="add-recurring-income-btn" data-no-toggle>+ fijo</button>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="recurring-incomes-list"></div>
+      </div>
+    </div>
+
     <div class="card" data-section="budgets">
       <div class="card-header" data-toggle tabindex="0" role="button">
         <span class="card-title" style="margin-bottom:0">Presupuestos</span>

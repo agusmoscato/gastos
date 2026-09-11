@@ -1,7 +1,7 @@
-const CACHE_NAME = "mi-libreta-v13";
+const CACHE_NAME = "mi-libreta-v14";
 const PRECACHE = [
-  "/assets/style.css?v=v13",
-  "/assets/app.js?v=v13",
+  "/assets/style.css?v=v14",
+  "/assets/app.js?v=v14",
   "/assets/icons/icon-192.png",
   "/assets/icons/icon-512.png",
   "/manifest.json",

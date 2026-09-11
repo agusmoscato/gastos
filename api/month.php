@@ -16,6 +16,19 @@ try {
     // simplemente no se generan los gastos fijos hasta que se corra la migración.
 }
 
+try {
+    materialize_recurring_incomes($pdo, $uid, $month);
+} catch (Throwable $e) {
+    // Si falta correr sql/upgrade_v9.sql (tabla recurring_incomes o columna
+    // incomes.recurring_income_id), el mes se sigue mostrando igual; solo no
+    // se generan los ingresos fijos hasta que se corra la migración.
+}
+
+// Filtros de la lista de ingresos (los del modal de ingresos). Son propios,
+// separados de los de movimientos, porque cada lista tiene su buscador.
+$incomeSearch = trim($_GET['income_q'] ?? '');
+$incomeCategoryFilter = $_GET['income_category_id'] ?? '';
+
 $incomeEntries = [];
 $income = 0.0;
 try {
@@ -43,7 +56,16 @@ try {
             return $r;
         }, $incomeStmt->fetchAll());
     }
+    // El total del mes ($income) se calcula SIEMPRE con todos los ingresos:
+    // el buscador y el filtro solo achican la lista que se muestra, no el
+    // número del ticket. Por eso filtramos acá y no en el SQL (la lista de
+    // ingresos de un mes es corta, no hace falta otra consulta).
     foreach ($incomeRows as $r) {
+        $income += (float) $r['amount'];
+
+        if ($incomeSearch !== '' && stripos((string) $r['description'], $incomeSearch) === false) continue;
+        if ($incomeCategoryFilter !== '' && (string) $r['category_id'] !== (string) $incomeCategoryFilter) continue;
+
         $incomeEntries[] = [
             'id' => (int) $r['id'],
             'amount' => (float) $r['amount'],
@@ -53,7 +75,6 @@ try {
             'categoryName' => $r['category_name'],
             'categoryColor' => $r['category_color'],
         ];
-        $income += (float) $r['amount'];
     }
 } catch (Throwable $e) {
     // Todavía no se corrió sql/upgrade_v7.sql (no existe la tabla incomes):

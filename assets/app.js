@@ -19,8 +19,10 @@
   let CSRF = "";
   let categories = [];
   let templates = [];
+  let incomeTemplates = [];
   let installments = [];
   let recurring = [];
+  let recurringIncomes = [];
   let dueDates = [];
   let settings = { hiddenSections: [], notificationsEnabled: false };
   let recaptchaSiteKey = null;
@@ -32,6 +34,7 @@
     { key: "templates", label: "Frecuentes" },
     { key: "installments", label: "Compras en cuotas" },
     { key: "recurring", label: "Gastos fijos" },
+    { key: "recurring-incomes", label: "Ingresos fijos" },
     { key: "budgets", label: "Presupuestos" },
     { key: "expenses", label: "Movimientos" },
   ];
@@ -39,6 +42,11 @@
   let monthData = { income: 0, incomeEntries: [], budgets: {}, expenses: [] };
   let searchQuery = "";
   let categoryFilter = "";
+  // Filtros propios de la lista de ingresos (viven en su modal, aparte de
+  // los de movimientos).
+  let incomeSearchQuery = "";
+  let incomeCategoryFilter = "";
+  let incomeSearchDebounce = null;
   let pieChart = null;
   let barChart = null;
   let yearChart = null;
@@ -158,6 +166,7 @@
       const boot = await apiGet("bootstrap.php");
       categories = boot.categories;
       templates = boot.templates;
+      incomeTemplates = boot.incomeTemplates || [];
       CSRF = boot.csrf;
       recaptchaSiteKey = boot.recaptchaSiteKey || null;
       if (boot.settings) settings = { hiddenSections: boot.settings.hiddenSections || [], notificationsEnabled: !!boot.settings.notificationsEnabled };
@@ -192,6 +201,13 @@
       if (wrap) wrap.innerHTML = '<div class="empty-hint" style="color:var(--red)">No se pudo cargar (¿corriste sql/upgrade_v5.sql?). Detalle: ' + esc(e.message || "") + '</div>';
     }
     try {
+      await loadRecurringIncomes();
+    } catch (e) {
+      console.error("Error cargando ingresos fijos:", e);
+      const wrap = document.getElementById("recurring-incomes-list");
+      if (wrap) wrap.innerHTML = '<div class="empty-hint" style="color:var(--red)">No se pudo cargar (¿corriste sql/upgrade_v9.sql?). Detalle: ' + esc(e.message || "") + '</div>';
+    }
+    try {
       await loadDueDates();
     } catch (e) {
       console.error("Error cargando vencimientos:", e);
@@ -212,6 +228,12 @@
     renderRecurring();
   }
 
+  async function loadRecurringIncomes() {
+    const data = await apiGet("recurring_income_list.php");
+    recurringIncomes = data.recurringIncomes;
+    renderRecurringIncomes();
+  }
+
   async function loadInstallments() {
     const data = await apiGet("installments_list.php");
     installments = data.installments;
@@ -222,6 +244,8 @@
     const params = new URLSearchParams({ month: activeMonth });
     if (searchQuery) params.set("q", searchQuery);
     if (categoryFilter) params.set("category_id", categoryFilter);
+    if (incomeSearchQuery) params.set("income_q", incomeSearchQuery);
+    if (incomeCategoryFilter) params.set("income_category_id", incomeCategoryFilter);
     monthData = await apiGet("month.php?" + params.toString());
     renderMonthLabel();
     renderTicket();
@@ -707,6 +731,51 @@
   }
 
   // ---------------------------------------------------------------------
+  // Render: ingresos fijos mensuales (mismo criterio que los gastos fijos)
+  // ---------------------------------------------------------------------
+  function renderRecurringIncomes() {
+    const wrap = document.getElementById("recurring-incomes-list");
+    if (!wrap) return;
+    if (recurringIncomes.length === 0) {
+      wrap.innerHTML = '<div class="empty-hint">Todavía no tenés ingresos fijos cargados (ej: sueldo, alquiler que cobrás).</div>';
+      return;
+    }
+    wrap.innerHTML = recurringIncomes.map((r) => `
+      <div class="installment-row" style="opacity:${r.active ? 1 : 0.5}">
+        <div class="budget-top">
+          <span class="dot" style="background:${r.categoryColor}"></span>
+          <span class="budget-name">${esc(r.name)}</span>
+          <span class="expense-amount" style="font-size:12.5px;color:var(--green)">${fmtMoney(r.amount)}/mes</span>
+        </div>
+        <div class="budget-foot">
+          <span>${r.active ? "activo desde " + esc(monthLabel(r.startMonth)) : "pausado"}</span>
+          <span style="display:flex;gap:10px">
+            <button type="button" class="budget-set-link" data-recinc-toggle="${r.id}">${r.active ? "pausar" : "reactivar"}</button>
+            <button type="button" class="budget-set-link" data-recinc-del="${r.id}" style="color:var(--red)">borrar</button>
+          </span>
+        </div>
+      </div>`).join("");
+
+    wrap.querySelectorAll("[data-recinc-toggle]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.dataset.recincToggle);
+        const item = recurringIncomes.find((r) => r.id === id);
+        await apiPost("recurring_income_toggle.php", { id, active: !item.active, csrf: CSRF });
+        await loadRecurringIncomes();
+      });
+    });
+    wrap.querySelectorAll("[data-recinc-del]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.dataset.recincDel);
+        if (!confirm("¿Borrar este ingreso fijo? Los ingresos que ya generó quedan en tu historial, solo se deja de generar nuevos.")) return;
+        await apiPost("recurring_income_delete.php", { id, csrf: CSRF });
+        recurringIncomes = recurringIncomes.filter((r) => r.id !== id);
+        renderRecurringIncomes();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Render: presupuestos
   // ---------------------------------------------------------------------
   function renderBudgets() {
@@ -903,10 +972,62 @@
   }
 
   function openIncomeListModal() {
-    const entries = monthData.incomeEntries || [];
-    const total = entries.reduce((s, e) => s + e.amount, 0);
+    const html = `
+      <div class="modal-head"><span class="modal-title">Ingresos de ${esc(monthLabel(activeMonth))}</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
+      <div class="ticket-row" style="padding-bottom:14px;margin-bottom:10px;border-bottom:1px dashed var(--border)">
+        <span class="ticket-label" style="font-weight:700">Total del mes</span>
+        <span class="ticket-big" style="font-size:22px;color:var(--green)" id="income-total">${fmtMoney(Number(monthData.income) || 0)}</span>
+      </div>
+      <div class="search-row">
+        <input class="search-input" id="income-search-input" type="text" placeholder="Buscar en ingresos..." value="${esc(incomeSearchQuery)}">
+        <select class="filter-select" id="income-category-filter"></select>
+      </div>
+      <div id="income-by-cat"></div>
+      <div id="income-list-rows"></div>
+      <div class="card-title" style="margin:16px 0 6px">Frecuentes</div>
+      <div class="template-row" id="income-template-row"></div>
+      <button type="button" class="primary-btn" id="income-add-btn" style="margin-top:14px">+ agregar ingreso</button>
+    `;
+    const overlay = openOverlay(html, (ov) => {
+      const sel = ov.querySelector("#income-category-filter");
+      sel.innerHTML = '<option value="">Todas</option>' + categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+      sel.value = incomeCategoryFilter;
 
-    // Resumen "por categoría": junta todo lo que entró este mes agrupado por
+      ov.querySelector("#income-search-input").addEventListener("input", (e) => {
+        incomeSearchQuery = e.target.value;
+        clearTimeout(incomeSearchDebounce);
+        incomeSearchDebounce = setTimeout(async () => { await loadMonth(); renderIncomeModalBody(ov); }, 300);
+      });
+      sel.addEventListener("change", async (e) => {
+        incomeCategoryFilter = e.target.value;
+        await loadMonth();
+        renderIncomeModalBody(ov);
+      });
+
+      ov.querySelector("#income-add-btn").addEventListener("click", () => {
+        overlay.remove();
+        openIncomeEntryModal(null, openIncomeListModal);
+      });
+
+      renderIncomeModalBody(ov);
+    });
+  }
+
+  // Pinta las partes "vivas" del modal de ingresos (desglose por categoría,
+  // lista y frecuentes) sin tocar el buscador, así no se pierde el foco
+  // mientras escribís.
+  // Ojo: `ov` ES el overlay (openOverlay le pasa el overlay al onMount), así
+  // que se cierra con ov.remove() — no usar la const del modal, que todavía
+  // no está asignada cuando esto corre.
+  function renderIncomeModalBody(ov) {
+    const entries = monthData.incomeEntries || [];
+    const filtering = !!(incomeSearchQuery || incomeCategoryFilter);
+    const shownTotal = entries.reduce((s, e) => s + e.amount, 0);
+
+    const totalEl = ov.querySelector("#income-total");
+    if (totalEl) totalEl.textContent = fmtMoney(Number(monthData.income) || 0);
+
+    // Resumen "por categoría": junta lo que se está mostrando agrupado por
     // categoría (los sin categoría van juntos al final).
     const byCat = new Map();
     entries.forEach((e) => {
@@ -928,19 +1049,24 @@
         return b[1].amount - a[1].amount;
       })
       .map(([, v]) => v);
-    const byCatHTML = catGroups.length > 1
+
+    ov.querySelector("#income-by-cat").innerHTML = catGroups.length > 1
       ? `<div class="card-title" style="margin-bottom:4px">Por categoría</div>
          <div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px dashed var(--border)">
            ${catGroups.map((c) => `
              <div class="legend-row">
                <span class="dot" style="background:${c.color}"></span>
                <span class="legend-name">${esc(c.name)}</span>
-               <span class="legend-val">${fmtMoney(c.amount)} · ${total ? Math.round((c.amount / total) * 100) : 0}%</span>
+               <span class="legend-val">${fmtMoney(c.amount)} · ${shownTotal ? Math.round((c.amount / shownTotal) * 100) : 0}%</span>
              </div>`).join("")}
          </div>`
       : "";
 
-    const rowsHTML = entries.length
+    const filterHint = filtering
+      ? `<div class="empty-hint" style="padding:0 0 8px">Filtrando: ${entries.length} ingreso${entries.length === 1 ? "" : "s"} · ${fmtMoney(shownTotal)}</div>`
+      : "";
+
+    ov.querySelector("#income-list-rows").innerHTML = filterHint + (entries.length
       ? entries.map((e) => `
           <div class="expense-row" data-income-row="${e.id}" style="cursor:pointer">
             <span class="dot" style="background:${e.categoryColor || "var(--green)"}"></span>
@@ -950,30 +1076,120 @@
             </div>
             <div class="expense-amount" style="color:var(--green)">${fmtMoney(e.amount)}</div>
           </div>`).join("")
-      : '<div class="empty-hint">Todavía no cargaste ningún ingreso este mes.</div>';
+      : `<div class="empty-hint">${filtering ? "No hay ingresos que coincidan con el filtro." : "Todavía no cargaste ningún ingreso este mes."}</div>`);
 
-    const html = `
-      <div class="modal-head"><span class="modal-title">Ingresos de ${esc(monthLabel(activeMonth))}</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
-      <div class="ticket-row" style="padding-bottom:14px;margin-bottom:10px;border-bottom:1px dashed var(--border)">
-        <span class="ticket-label" style="font-weight:700">Total del mes</span>
-        <span class="ticket-big" style="font-size:22px;color:var(--green)">${fmtMoney(total)}</span>
-      </div>
-      ${byCatHTML}
-      <div id="income-list-rows">${rowsHTML}</div>
-      <button type="button" class="primary-btn" id="income-add-btn" style="margin-top:14px">+ agregar ingreso</button>
-    `;
-    const overlay = openOverlay(html, (ov) => {
-      ov.querySelectorAll("[data-income-row]").forEach((row) => {
-        row.addEventListener("click", () => {
-          const id = Number(row.dataset.incomeRow);
-          const entry = entries.find((e) => e.id === id);
-          overlay.remove();
-          openIncomeEntryModal(entry, openIncomeListModal);
-        });
+    ov.querySelectorAll("[data-income-row]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const id = Number(row.dataset.incomeRow);
+        const entry = entries.find((e) => e.id === id);
+        ov.remove();
+        openIncomeEntryModal(entry, openIncomeListModal);
       });
-      ov.querySelector("#income-add-btn").addEventListener("click", () => {
-        overlay.remove();
-        openIncomeEntryModal(null, openIncomeListModal);
+    });
+
+    renderIncomeTemplates(ov);
+  }
+
+  // ---------------------------------------------------------------------
+  // Ingresos frecuentes: mismos chips que los gastos frecuentes, pero
+  // dentro del modal de ingresos.
+  // ---------------------------------------------------------------------
+  function renderIncomeTemplates(ov) {
+    const row = ov.querySelector("#income-template-row");
+    if (!row) return;
+    row.innerHTML = incomeTemplates.map((t) => {
+      const cat = catById(t.category_id);
+      return `<button type="button" class="template-chip" data-inctpl="${t.id}">
+        <span class="dot" style="background:${cat ? cat.color : "#2F6F4E"}"></span>
+        ${esc(t.name)} · ${fmtMoney(t.amount)}
+        <span class="template-del" data-inctpl-del="${t.id}" title="Borrar frecuente">${ICONS.x}</span>
+      </button>`;
+    }).join("") + `<button type="button" class="template-add-btn" id="add-income-template-btn">${ICONS.plus} frecuente</button>`;
+
+    row.querySelectorAll("[data-inctpl]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        if (e.target.closest("[data-inctpl-del]")) return;
+        const t = incomeTemplates.find((x) => x.id === Number(btn.dataset.inctpl));
+        ov.remove();
+        confirmQuickAddIncome(t);
+      });
+    });
+    row.querySelectorAll("[data-inctpl-del]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.inctplDel);
+        incomeTemplates = incomeTemplates.filter((t) => t.id !== id);
+        renderIncomeTemplates(ov);
+        await apiPost("income_template_delete.php", { id, csrf: CSRF });
+      });
+    });
+    ov.querySelector("#add-income-template-btn").addEventListener("click", () => {
+      ov.remove();
+      openIncomeTemplateModal();
+    });
+  }
+
+  function confirmQuickAddIncome(t) {
+    const cat = catById(t.category_id);
+    const html = `
+      <div class="modal-head"><span class="modal-title">Confirmar ingreso</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
+      <div class="empty-hint" style="padding:0 0 16px;font-size:14px;color:var(--ink)">
+        ¿Querés agregar un ingreso de <b>${esc(t.name)}</b> por <b>${fmtMoney(t.amount)}</b>${cat ? ` en <b>${esc(cat.name)}</b>` : ""}?
+      </div>
+      <button type="button" class="primary-btn" id="confirm-income-quickadd-yes">Sí, agregar</button>
+      <button type="button" class="secondary-btn" data-close>Cancelar</button>
+    `;
+    openOverlay(html, (ov) => {
+      ov.querySelector("#confirm-income-quickadd-yes").addEventListener("click", async () => {
+        ov.closest(".overlay").remove();
+        showSaveIndicator("saving");
+        await apiPost("income_add.php", { amount: t.amount, categoryId: t.category_id, desc: t.name, date: todayISO(), csrf: CSRF });
+        showSaveIndicator("saved");
+        await loadMonth(); await loadMonthsChart();
+        openIncomeListModal();
+      });
+    });
+  }
+
+  function openIncomeTemplateModal() {
+    let selectedCat = null;
+    const html = `
+      <div class="modal-head"><span class="modal-title">Ingreso frecuente</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
+      <div class="field"><label class="label">Nombre</label><input class="text-input" id="inctpl-name" placeholder="ej: Sueldo, freelance..."></div>
+      <div class="field"><label class="label">Monto</label>
+        <div class="amount-input-wrap"><span class="amount-prefix">$</span><input class="amount-input" id="inctpl-amount" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <div class="field"><label class="label">Categoría (opcional)</label><div class="chip-wrap" id="inctpl-chips">${incomeCategoryChipsHTML(selectedCat)}</div></div>
+      <button type="button" class="primary-btn" id="inctpl-save">Guardar como frecuente</button>`;
+    const overlay = openOverlay(html, (ov) => {
+      function bindChips() {
+        ov.querySelectorAll("#inctpl-chips [data-chip]").forEach((chip) => chip.addEventListener("click", () => {
+          const v = Number(chip.dataset.chip);
+          selectedCat = v === 0 ? null : v;
+          ov.querySelector("#inctpl-chips").innerHTML = incomeCategoryChipsHTML(selectedCat);
+          bindChips();
+        }));
+        const addBtn = ov.querySelector("#chip-add-category");
+        if (addBtn) addBtn.addEventListener("click", () => { overlay.remove(); openCategoryModal(openIncomeTemplateModal); });
+      }
+      bindChips();
+      ov.querySelector("#inctpl-amount").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, ""); });
+      ov.querySelector("#inctpl-save").addEventListener("click", async () => {
+        const name = ov.querySelector("#inctpl-name").value.trim();
+        const amount = Number(ov.querySelector("#inctpl-amount").value) || 0;
+        if (!name) { showInstError(ov, "Falta el nombre."); return; }
+        if (amount <= 0) { showInstError(ov, "El monto tiene que ser mayor a cero."); return; }
+        const saveBtn = ov.querySelector("#inctpl-save");
+        saveBtn.disabled = true;
+        try {
+          const t = await apiPost("income_template_add.php", { name, amount, categoryId: selectedCat, csrf: CSRF });
+          incomeTemplates.push({ id: t.id, name, amount, category_id: selectedCat });
+          overlay.remove();
+          openIncomeListModal();
+        } catch (err) {
+          showInstError(ov, err.message || "No se pudo guardar.");
+          saveBtn.disabled = false;
+        }
       });
     });
   }
@@ -1137,6 +1353,7 @@
           await apiPost("category_delete.php", { id, csrf: CSRF });
           categories = categories.filter((c) => c.id !== id);
           templates = templates.filter((t) => t.category_id !== id);
+          incomeTemplates = incomeTemplates.filter((t) => t.category_id !== id);
           ov.querySelector("#manage-list").innerHTML = rowsHTML();
           bind();
           await loadMonth(); renderTemplates();
@@ -1227,9 +1444,13 @@
   }
 
 
-  function openImportModal() {
+  // type: "expense" (movimientos) o "income" (ingresos). El CSV y el parser
+  // son los mismos, solo cambia a qué tabla van las filas.
+  function openImportModal(type) {
+    const isIncome = type === "income";
+    const what = isIncome ? "ingresos" : "movimientos";
     const html = `
-      <div class="modal-head"><span class="modal-title">Importar movimientos</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
+      <div class="modal-head"><span class="modal-title">Importar ${what}</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
       <div class="empty-hint" style="padding-bottom:10px">
         Subí un archivo CSV con columnas <b>Fecha;Categoría;Descripción;Monto</b>
         (fecha en formato AAAA-MM-DD). Si una categoría no existe todavía, se crea sola.
@@ -1268,9 +1489,9 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Importando...";
         try {
-          const res = await apiPost("import_bulk.php", { rows: parsedRows, csrf: CSRF });
+          const res = await apiPost("import_bulk.php", { rows: parsedRows, type: isIncome ? "income" : "expense", csrf: CSRF });
           overlay.remove();
-          let msg = `Se importaron ${res.imported} movimientos.`;
+          let msg = `Se importaron ${res.imported} ${what}.`;
           if (res.skipped) msg += ` Se salteó ${res.skipped} por datos inválidos.`;
           if (res.createdCategories && res.createdCategories.length) msg += ` Categorías nuevas: ${res.createdCategories.join(", ")}.`;
           showToast(msg);
@@ -1380,6 +1601,56 @@
           await apiPost("recurring_add.php", { name, amount, categoryId: selectedCat, startMonth, dayOfMonth: new Date().getDate(), csrf: CSRF });
           overlay.remove();
           await loadRecurring();
+          await loadMonth(); await loadMonthsChart();
+        } catch (err) {
+          showInstError(ov, err.message || "No se pudo guardar.");
+          saveBtn.disabled = false;
+        }
+      });
+    });
+  }
+
+
+  function openRecurringIncomeModal() {
+    let selectedCat = null;
+    const html = `
+      <div class="modal-head"><span class="modal-title">Ingreso fijo mensual</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
+      <div class="field"><label class="label">Nombre</label><input class="text-input" id="recinc-name" placeholder="ej: Sueldo, alquiler que cobrás"></div>
+      <div class="field"><label class="label">Monto por mes</label>
+        <div class="amount-input-wrap"><span class="amount-prefix">$</span><input class="amount-input" id="recinc-amount" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <div class="field"><label class="label">Categoría (opcional)</label><div class="chip-wrap" id="recinc-chips">${incomeCategoryChipsHTML(selectedCat)}</div></div>
+      <div class="field"><label class="label">Empieza en</label>
+        <input type="month" class="text-input" id="recinc-month" value="${activeMonth}">
+      </div>
+      <button type="button" class="primary-btn" id="recinc-save">Guardar ingreso fijo</button>
+    `;
+    const overlay = openOverlay(html, (ov) => {
+      function bindChips() {
+        ov.querySelectorAll("#recinc-chips [data-chip]").forEach((chip) => chip.addEventListener("click", () => {
+          const v = Number(chip.dataset.chip);
+          selectedCat = v === 0 ? null : v;
+          ov.querySelector("#recinc-chips").innerHTML = incomeCategoryChipsHTML(selectedCat);
+          bindChips();
+        }));
+        const addBtn = ov.querySelector("#chip-add-category");
+        if (addBtn) addBtn.addEventListener("click", () => { overlay.remove(); openCategoryModal(openRecurringIncomeModal); });
+      }
+      bindChips();
+      ov.querySelector("#recinc-amount").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, ""); });
+
+      ov.querySelector("#recinc-save").addEventListener("click", async () => {
+        const name = ov.querySelector("#recinc-name").value.trim();
+        const amount = Number(ov.querySelector("#recinc-amount").value) || 0;
+        const startMonth = ov.querySelector("#recinc-month").value || activeMonth;
+        if (!name) { showInstError(ov, "Falta el nombre."); return; }
+        if (amount <= 0) { showInstError(ov, "El monto tiene que ser mayor a cero."); return; }
+        const saveBtn = ov.querySelector("#recinc-save");
+        saveBtn.disabled = true;
+        try {
+          await apiPost("recurring_income_add.php", { name, amount, categoryId: selectedCat, startMonth, dayOfMonth: new Date().getDate(), csrf: CSRF });
+          overlay.remove();
+          await loadRecurringIncomes();
           await loadMonth(); await loadMonthsChart();
         } catch (err) {
           showInstError(ov, err.message || "No se pudo guardar.");
@@ -1548,9 +1819,16 @@
 
       <div class="card-title" style="margin:18px 0 4px">Tus datos</div>
       <button type="button" class="secondary-btn" id="settings-import-btn" style="margin-top:6px">Importar movimientos (CSV)</button>
-      <button type="button" class="secondary-btn" id="settings-export-month-btn">Exportar este mes (CSV)</button>
-      <button type="button" class="secondary-btn" id="settings-export-all-btn">Exportar todo (CSV)</button>
-      <button type="button" class="secondary-btn" id="settings-backup-btn">Backup completo (JSON)</button>
+      <button type="button" class="secondary-btn" id="settings-export-month-btn">Exportar movimientos de este mes (CSV)</button>
+      <button type="button" class="secondary-btn" id="settings-export-all-btn">Exportar todos los movimientos (CSV)</button>
+
+      <div class="card-title" style="margin:18px 0 4px">Tus ingresos</div>
+      <button type="button" class="secondary-btn" id="settings-import-income-btn" style="margin-top:6px">Importar ingresos (CSV)</button>
+      <button type="button" class="secondary-btn" id="settings-export-income-month-btn">Exportar ingresos de este mes (CSV)</button>
+      <button type="button" class="secondary-btn" id="settings-export-income-all-btn">Exportar todos los ingresos (CSV)</button>
+
+      <div class="card-title" style="margin:18px 0 4px">Backup</div>
+      <button type="button" class="secondary-btn" id="settings-backup-btn" style="margin-top:6px">Backup completo (JSON)</button>
 
       <div class="card-title" style="margin:18px 0 4px">Notificaciones</div>
       <div class="empty-hint" style="padding-top:0">
@@ -1578,13 +1856,23 @@
 
       ov.querySelector("#settings-import-btn").addEventListener("click", () => {
         ov.closest(".overlay").remove();
-        openImportModal();
+        openImportModal("expense");
       });
       ov.querySelector("#settings-export-month-btn").addEventListener("click", () => {
         window.location.href = "/api/export.php?month=" + encodeURIComponent(activeMonth);
       });
       ov.querySelector("#settings-export-all-btn").addEventListener("click", () => {
         window.location.href = "/api/export.php?month=all";
+      });
+      ov.querySelector("#settings-import-income-btn").addEventListener("click", () => {
+        ov.closest(".overlay").remove();
+        openImportModal("income");
+      });
+      ov.querySelector("#settings-export-income-month-btn").addEventListener("click", () => {
+        window.location.href = "/api/export.php?type=income&month=" + encodeURIComponent(activeMonth);
+      });
+      ov.querySelector("#settings-export-income-all-btn").addEventListener("click", () => {
+        window.location.href = "/api/export.php?type=income&month=all";
       });
       ov.querySelector("#settings-backup-btn").addEventListener("click", () => {
         window.location.href = "/api/backup_export.php";
@@ -1642,6 +1930,7 @@
     document.getElementById("year-summary-btn").addEventListener("click", openYearSummaryModal);
     document.getElementById("settings-btn").addEventListener("click", openSettingsModal);
     document.getElementById("add-recurring-btn").addEventListener("click", openRecurringModal);
+    document.getElementById("add-recurring-income-btn").addEventListener("click", openRecurringIncomeModal);
     document.getElementById("add-duedate-btn").addEventListener("click", openDueDateModal);
     document.getElementById("manage-categories-link").addEventListener("click", openManageCategoriesModal);
     document.getElementById("add-category-link").addEventListener("click", () => openCategoryModal());
