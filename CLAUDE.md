@@ -4,7 +4,7 @@ App de **gastos personales** con login real, pensada para subir tal cual a un
 hosting compartido tipo **Hostinger**. Sin build, sin dependencias de servidor:
 se sube por FTP/administrador de archivos y funciona.
 
-Versión actual: **v15** (ver `APP_VERSION` en `includes/functions.php`).
+Versión actual: **v16** (ver `APP_VERSION` en `includes/functions.php`).
 
 ---
 
@@ -247,6 +247,19 @@ manejá `click` + `keydown` (Enter/Espacio) a mano.
 El atajo **"+" del ticket** (`#ticket-add-income`) sigue esta regla: es
 **hermano** de `#ticket-income` dentro de `span.ticket-income-wrap`, nunca
 adentro. Si tocás `index.php`, validalo con un parser HTML5 real (html5lib).
+
+---
+
+## 7a. Header responsive (dos filas en celular)
+
+Con botones de 44×44 el header (`.app-header`) no entra en una fila en ningún
+celular (necesita ~460px). Por eso en `@media (max-width: 430px), (pointer: coarse)`
+pasa a **dos filas**: marca + acciones (configuración, resumen anual, guardado,
+logout) arriba y el selector de mes a lo ancho abajo (`order: 3; flex: 1 0 100%`).
+Desktop con mouse queda en una fila, con los botones chicos de siempre.
+Si agregás un botón al header, chequeá que no haya scroll horizontal a
+320/360/390/430px. **No** se usa `overflow-x: hidden` en `body`/`html`: el
+desborde se arregla de raíz.
 
 ---
 
