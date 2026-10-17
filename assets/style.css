@@ -67,6 +67,13 @@ a { color: var(--green); }
 .ticket-label { font-size: 13px; color: var(--muted); }
 .ticket-amount { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600; }
 .link-amount { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600; color: var(--ink); background: none; border: none; padding: 0; text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+.ticket-income-wrap { display: inline-flex; align-items: center; gap: 2px; }
+/* Atajo "+": área táctil de 44x44 con un círculo visible más chico. Los
+   márgenes negativos evitan que el área táctil agrande la fila del ticket. */
+.ticket-add-btn { width: 44px; height: 44px; margin: -10px -9px -10px 0; padding: 0; background: none; border: none; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: var(--paper); }
+.ticket-add-icon { width: 26px; height: 26px; border-radius: 999px; background: var(--green); display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.ticket-add-btn:hover .ticket-add-icon { background: #255A3F; }
+.ticket-add-btn:focus-visible { outline: 2px solid var(--green); outline-offset: -4px; }
 .ticket-big { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 700; }
 .dashed-line { border-top: 1.5px dashed var(--border); margin: 10px 0; }
 
@@ -145,6 +152,14 @@ a { color: var(--green); }
 .modal { width: 100%; max-width: 460px; background: var(--paper); border-radius: 18px 18px 0 0; padding: 18px 18px 26px; max-height: 88vh; overflow-y: auto; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .modal-title { font-family: 'Fraunces', serif; font-weight: 600; font-size: 17px; }
+/* Modal con footer fijo: arriba fijo (.modal-top), medio con scroll propio
+   (.modal-scroll), botón principal siempre visible abajo (.modal-footer).
+   El scroll pasa del .modal al medio, así el footer nunca tapa la última fila. */
+.modal--sticky-footer { display: flex; flex-direction: column; overflow: hidden; padding: 0; max-height: 88vh; max-height: 88dvh; }
+.modal--sticky-footer .modal-top { flex: none; padding: 18px 18px 0; }
+.modal--sticky-footer .modal-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 12px 18px 16px; }
+.modal--sticky-footer .modal-footer { flex: none; padding: 12px 18px calc(14px + env(safe-area-inset-bottom, 0px)); background: var(--paper); border-top: 1px solid var(--border); box-shadow: 0 -6px 14px rgba(36,48,31,.06); }
+.modal--sticky-footer .modal-footer .primary-btn { margin-top: 0; min-height: 48px; }
 .icon-btn { background: #F0EAD9; border: none; border-radius: 999px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
 
 .field { margin-bottom: 14px; }

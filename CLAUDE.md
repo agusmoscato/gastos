@@ -4,7 +4,7 @@ App de **gastos personales** con login real, pensada para subir tal cual a un
 hosting compartido tipo **Hostinger**. Sin build, sin dependencias de servidor:
 se sube por FTP/administrador de archivos y funciona.
 
-Versión actual: **v14** (ver `APP_VERSION` en `includes/functions.php`).
+Versión actual: **v15** (ver `APP_VERSION` en `includes/functions.php`).
 
 ---
 
@@ -163,7 +163,7 @@ Todos requieren sesión. Los que escriben requieren CSRF (body JSON + header
 - **Compras en cuotas**: se cargan una vez y generan el gasto de cada mes con etiqueta "cuota 3/12". "Cancelar restantes" borra solo las futuras sin perder el historial; borrar la compra borra todo.
 - **Gastos fijos recurrentes**: se cargan una vez y se generan solos cada mes hasta pausarlos o borrarlos.
 - **Vencimientos** con color según urgencia (vencido / vence pronto / falta) y botón "marcar pagado" que puede crear y vincular el gasto.
-- **Ingresos múltiples por mes** (sueldo, freelance, ventas...), cada uno editable/borrable, **con categoría opcional** (mismo sistema de categorías y colores que los gastos). El total del mes es la suma. El modal de ingresos (se abre desde "Ingreso" en el ticket) muestra arriba un desglose **"Por categoría"** — monto y % de cada categoría del mes, "Sin categoría" al final — que aparece cuando hay más de una categoría en juego.
+- **Ingresos múltiples por mes** (sueldo, freelance, ventas...), cada uno editable/borrable, **con categoría opcional** (mismo sistema de categorías y colores que los gastos). El total del mes es la suma. El modal de ingresos (se abre desde "Ingreso" en el ticket) muestra arriba un desglose **"Por categoría"** — monto y % de cada categoría del mes, "Sin categoría" al final — que aparece cuando hay más de una categoría en juego. El botón "+ agregar ingreso" queda fijo abajo del modal (ver §7b), y el ticket tiene un atajo "+" junto al monto que abre el alta directo, sin pasar por la lista.
 - **Ingresos a la par de los gastos** (v14): el modal de ingresos tiene **buscador + filtro por categoría** propios (el "Total del mes" sigue siendo el real, sin filtrar, y aparece una línea "Filtrando: N ingresos · $X" cuando hay filtro puesto) y una fila de **"Frecuentes"** (chips de `income_templates`, con el mismo diálogo "¿Querés agregar un ingreso de X por $Y?"). Además hay una tarjeta **"Ingresos fijos"** en el dashboard (ocultable desde Configuración), que se generan solos cada mes igual que los gastos fijos.
 - **Importar / exportar CSV** de movimientos **y de ingresos** (mismo formato y mismo flujo, elegido desde Configuración). **Backup completo en JSON**.
 - **Resumen anual**: ingreso / gasto / balance del año, gráfico mes a mes, total por categoría.
@@ -243,6 +243,41 @@ que además tienen botones de acción adentro — editar, agregar, etc.) usan
 **`<div role="button" tabindex="0">`** en vez de `<button>`. Si vas a hacer un
 contenedor clickeable que puede tener botones adentro, usá el `div` con `role` y
 manejá `click` + `keydown` (Enter/Espacio) a mano.
+
+El atajo **"+" del ticket** (`#ticket-add-income`) sigue esta regla: es
+**hermano** de `#ticket-income` dentro de `span.ticket-income-wrap`, nunca
+adentro. Si tocás `index.php`, validalo con un parser HTML5 real (html5lib).
+
+---
+
+## 7b. Patrón: modal con footer fijo (`.modal--sticky-footer`)
+
+Para modales con listas largas donde la acción principal tiene que estar
+siempre a mano (hoy: la lista de ingresos, `openIncomeListModal`):
+
+```js
+openOverlay(`
+  <div class="modal-top">…header + resumen fijo…</div>
+  <div class="modal-scroll">…lista / contenido que scrollea…</div>
+  <div class="modal-footer"><button class="primary-btn" …>+ agregar</button></div>
+`, onMount, {
+  modalClass: "modal--sticky-footer",
+  initialFocus: "#el-boton-del-footer",
+  returnFocus: elementoQueAbreElModal,   // si quien abrió ya no existe
+  fitViewport: true,                     // ajusta al teclado virtual
+});
+```
+
+- El `.modal` pasa a columna flex con `overflow: hidden`; **solo** `.modal-scroll`
+  scrollea (`flex: 1; min-height: 0`), así el footer nunca tapa la última fila.
+  Los demás modales no cambian (siguen con `overflow-y: auto` en `.modal`).
+- El footer usa `padding-bottom: calc(14px + env(safe-area-inset-bottom))`.
+  Ojo: `env()` da 0 mientras el `<meta viewport>` no tenga `viewport-fit=cover`.
+- `fitViewport` ajusta overlay y `max-height` al `visualViewport` para que con el
+  teclado abierto el footer quede arriba del teclado.
+- `openOverlay` en general: cierra con Escape, pone `aria-label="Cerrar"` a los
+  `[data-close]` sin texto, enfoca `initialFocus` (o la X) si `onMount` no enfocó
+  nada, y al cerrar por fondo/X/Escape devuelve el foco a quien abrió.
 
 ---
 

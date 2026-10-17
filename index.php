@@ -64,7 +64,12 @@ $userEmail = current_user_email();
     <div class="ticket" id="ticket">
       <div class="ticket-row">
         <span class="ticket-label">Ingreso</span>
-        <button type="button" class="link-amount" id="ticket-income">$ 0</button>
+        <span class="ticket-income-wrap">
+          <button type="button" class="link-amount" id="ticket-income">$ 0</button>
+          <button type="button" class="ticket-add-btn" id="ticket-add-income" aria-label="Agregar ingreso" title="Agregar ingreso">
+            <span class="ticket-add-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          </button>
+        </span>
       </div>
       <div class="ticket-row">
         <span class="ticket-label">Gastado</span>

@@ -872,15 +872,60 @@
   // ---------------------------------------------------------------------
   // Modales
   // ---------------------------------------------------------------------
-  function openOverlay(innerHTML, onMount) {
+  // opts (todo opcional):
+  //   modalClass   — clase extra para el .modal (ej. "modal--sticky-footer").
+  //   initialFocus — selector del elemento que recibe el foco al abrir.
+  //   returnFocus  — elemento al que vuelve el foco al cerrar si quien abrió
+  //                  ya no existe (ej. venías de otro modal que se cerró).
+  //   fitViewport  — ajusta el overlay al visualViewport (teclado virtual).
+  function openOverlay(innerHTML, onMount, opts = {}) {
+    const active = document.activeElement;
+    const opener = active && active !== document.body && !active.closest(".overlay") ? active : opts.returnFocus || null;
     const overlay = document.createElement("div");
     overlay.className = "overlay";
-    overlay.innerHTML = `<div class="modal">${innerHTML}</div>`;
+    overlay.innerHTML = `<div class="modal${opts.modalClass ? " " + opts.modalClass : ""}" role="dialog" aria-modal="true">${innerHTML}</div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => overlay.remove()));
+    // Cierre "del usuario" (fondo, X, Escape): devuelve el foco a quien abrió.
+    const close = () => {
+      overlay.remove();
+      if (opener && opener.isConnected) opener.focus();
+    };
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
+    overlay.querySelectorAll("[data-close]").forEach((b) => {
+      if (!b.hasAttribute("aria-label") && !b.textContent.trim()) b.setAttribute("aria-label", "Cerrar");
+      b.addEventListener("click", close);
+    });
+    if (opts.fitViewport) fitOverlayToVisualViewport(overlay);
     if (onMount) onMount(overlay);
+    if (!overlay.contains(document.activeElement)) {
+      const first = (opts.initialFocus && overlay.querySelector(opts.initialFocus)) || overlay.querySelector("[data-close]");
+      if (first) first.focus({ preventScroll: true });
+    }
     return overlay;
+  }
+
+  // Con el teclado virtual abierto, en varios navegadores mobile el overlay
+  // (position:fixed) sigue midiendo el alto total y el teclado tapa la parte
+  // de abajo del modal. Lo achicamos al viewport visible mientras esté abierto.
+  function fitOverlayToVisualViewport(overlay) {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const modal = overlay.querySelector(".modal");
+    const apply = () => {
+      if (!overlay.isConnected) {
+        vv.removeEventListener("resize", apply);
+        vv.removeEventListener("scroll", apply);
+        return;
+      }
+      overlay.style.top = vv.offsetTop + "px";
+      overlay.style.height = vv.height + "px";
+      overlay.style.bottom = "auto";
+      modal.style.maxHeight = Math.round(vv.height * 0.88) + "px";
+    };
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    apply();
   }
 
   function categoryChipsHTML(selectedId, includeAdd = true) {
@@ -972,21 +1017,29 @@
   }
 
   function openIncomeListModal() {
+    // Modal con footer fijo (.modal--sticky-footer): arriba fijo, medio con
+    // scroll propio, abajo el botón de agregar siempre a la vista.
     const html = `
-      <div class="modal-head"><span class="modal-title">Ingresos de ${esc(monthLabel(activeMonth))}</span><button type="button" class="icon-btn" data-close>${ICONS.x}</button></div>
-      <div class="ticket-row" style="padding-bottom:14px;margin-bottom:10px;border-bottom:1px dashed var(--border)">
-        <span class="ticket-label" style="font-weight:700">Total del mes</span>
-        <span class="ticket-big" style="font-size:22px;color:var(--green)" id="income-total">${fmtMoney(Number(monthData.income) || 0)}</span>
+      <div class="modal-top">
+        <div class="modal-head"><span class="modal-title" id="income-list-title">Ingresos de ${esc(monthLabel(activeMonth))}</span><button type="button" class="icon-btn" data-close aria-label="Cerrar">${ICONS.x}</button></div>
+        <div class="ticket-row" style="padding-bottom:12px;border-bottom:1px dashed var(--border)">
+          <span class="ticket-label" style="font-weight:700">Total del mes</span>
+          <span class="ticket-big" style="font-size:22px;color:var(--green)" id="income-total">${fmtMoney(Number(monthData.income) || 0)}</span>
+        </div>
       </div>
-      <div class="search-row">
-        <input class="search-input" id="income-search-input" type="text" placeholder="Buscar en ingresos..." value="${esc(incomeSearchQuery)}">
-        <select class="filter-select" id="income-category-filter"></select>
+      <div class="modal-scroll">
+        <div class="search-row">
+          <input class="search-input" id="income-search-input" type="text" placeholder="Buscar en ingresos..." aria-label="Buscar en ingresos" value="${esc(incomeSearchQuery)}">
+          <select class="filter-select" id="income-category-filter" aria-label="Filtrar por categoría"></select>
+        </div>
+        <div id="income-by-cat"></div>
+        <div id="income-list-rows"></div>
+        <div class="card-title" style="margin:16px 0 6px">Frecuentes</div>
+        <div class="template-row" id="income-template-row"></div>
       </div>
-      <div id="income-by-cat"></div>
-      <div id="income-list-rows"></div>
-      <div class="card-title" style="margin:16px 0 6px">Frecuentes</div>
-      <div class="template-row" id="income-template-row"></div>
-      <button type="button" class="primary-btn" id="income-add-btn" style="margin-top:14px">+ agregar ingreso</button>
+      <div class="modal-footer">
+        <button type="button" class="primary-btn" id="income-add-btn" aria-label="Agregar ingreso">+ agregar ingreso</button>
+      </div>
     `;
     const overlay = openOverlay(html, (ov) => {
       const sel = ov.querySelector("#income-category-filter");
@@ -1010,6 +1063,21 @@
       });
 
       renderIncomeModalBody(ov);
+    }, {
+      modalClass: "modal--sticky-footer",
+      initialFocus: "#income-add-btn",
+      returnFocus: document.getElementById("ticket-income"),
+      fitViewport: true,
+    });
+    overlay.querySelector(".modal").setAttribute("aria-labelledby", "income-list-title");
+  }
+
+  // Atajo "+" del ticket: va directo al alta, sin pasar por la lista.
+  function openIncomeQuickAdd() {
+    openIncomeEntryModal(null, () => {
+      showToast("Ingreso agregado.");
+      const btn = document.getElementById("ticket-add-income");
+      if (btn) btn.focus({ preventScroll: true });
     });
   }
 
@@ -1284,6 +1352,9 @@
           saveBtn.disabled = false;
         }
       });
+    }, {
+      initialFocus: isEdit ? null : "#income-amount",
+      returnFocus: document.getElementById("ticket-income"),
     });
   }
 
@@ -1927,6 +1998,7 @@
       await loadMonth(); await loadMonthsChart();
     });
     document.getElementById("ticket-income").addEventListener("click", openIncomeListModal);
+    document.getElementById("ticket-add-income").addEventListener("click", openIncomeQuickAdd);
     document.getElementById("year-summary-btn").addEventListener("click", openYearSummaryModal);
     document.getElementById("settings-btn").addEventListener("click", openSettingsModal);
     document.getElementById("add-recurring-btn").addEventListener("click", openRecurringModal);
